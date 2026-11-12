@@ -165,6 +165,9 @@ export const Dashboard: React.FC = () => {
   const wrapperRef = React.useRef<HTMLDivElement>(null);
   const { toasts, push, dismiss } = useToasts();
   const [typeFilter, setTypeFilter] = React.useState<string | null>(() => readTypeFilter());
+  const [query, setQuery] = React.useState('');
+  const [view, setView] = React.useState<'cards' | 'table'>('cards');
+  const [browserFilter, setBrowserFilter] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -244,11 +247,19 @@ export const Dashboard: React.FC = () => {
 
   // ── stats ────────────────────────────────────────────────────────────────────
 
-  const sortedBrowsers = React.useMemo(() =>
-    browsers
+  const visibleBrowsers = React.useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return browsers
       .filter(b => typeFilter === null || sessionTypeLabel(b.sessionType) === typeFilter)
-      .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()),
-    [browsers, typeFilter]);
+      .filter(b => browserFilter === null || b.browserName === browserFilter)
+      .filter(b => {
+        if (!q) return true;
+        return (b.name ?? '').toLowerCase().includes(q)
+          || b.browserName.toLowerCase().includes(q)
+          || b.sessionId.toLowerCase().includes(q);
+      })
+      .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+  }, [browsers, typeFilter, browserFilter, query]);
 
   const toggleTypeFilter = React.useCallback((sessionType: string) => {
     setTypeFilter(cur => {
@@ -273,6 +284,33 @@ export const Dashboard: React.FC = () => {
       browsers: browserGroups.map(g => [g.name, sessionCount.get(g.name) ?? 0] as [string, number]),
     };
   }, [browsers, browserGroups]);
+
+  const renderConnect = (browser: Session, isDeleting: boolean) => {
+    if (browser.vnc === false) {
+      return <button className="vnc-button disabled" disabled title="VNC is not available for this browser">CONNECT</button>;
+    }
+    if (browser.phase === 'Running' && !isDeleting) {
+      return (
+        <Link
+          to={`/session/${browser.browserId}`}
+          className="vnc-button"
+          state={{ sessionStartTime: browser.startTime }}
+        >
+          CONNECT
+        </Link>
+      );
+    }
+    return <button className="vnc-button disabled" disabled>CONNECT</button>;
+  };
+
+  const copyId = async (id: string) => {
+    try {
+      await navigator.clipboard.writeText(id);
+      push('Session ID copied', id);
+    } catch {
+      push('Could not copy session ID', id);
+    }
+  };
 
   // ── render ───────────────────────────────────────────────────────────────────
 
@@ -378,19 +416,104 @@ export const Dashboard: React.FC = () => {
       </header>
 
       <main className="main-content">
+        <div className="toolbar">
+          <input
+            className="search-input"
+            type="search"
+            placeholder="Search by test name, browser or session ID"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+          />
+
+          <div className="filter-chips">
+            {stats.browsers.filter(([, count]) => count > 0).map(([name, count]) => (
+              <button
+                key={name}
+                className={`chip ${browserFilter === name ? 'active' : ''}`}
+                onClick={() => setBrowserFilter(cur => (cur === name ? null : name))}
+              >
+                {name} <strong>{count}</strong>
+              </button>
+            ))}
+          </div>
+
+          <div className="view-switch">
+            <button className={view === 'cards' ? 'active' : ''} onClick={() => setView('cards')}>Cards</button>
+            <button className={view === 'table' ? 'active' : ''} onClick={() => setView('table')}>Table</button>
+          </div>
+        </div>
+
         {isLoading && browsers.length === 0 ? (
-          <div style={{ textAlign: 'center', marginTop: 40, color: '#666' }}>Loading sessions...</div>
+          <div className="skeleton-grid">
+            {[0, 1, 2].map(i => <div className="skeleton-card" key={i} />)}
+          </div>
+        ) : visibleBrowsers.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-title">No active sessions</div>
+            <div className="empty-text">Start a test or press START BROWSER to launch a browser manually.</div>
+          </div>
+        ) : view === 'table' ? (
+          <table className="session-table">
+            <thead>
+              <tr>
+                <th>Test</th>
+                <th>Browser</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Started</th>
+                <th>Uptime</th>
+                <th>Session ID</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {visibleBrowsers.map(browser => {
+                const isDeleting = deletingIds.has(browser.browserId);
+                return (
+                  <tr key={browser.browserId} className={isDeleting ? 'deleting' : ''}>
+                    <td className="cell-title">{browser.name || 'no name'}</td>
+                    <td>{browser.browserName} {browser.browserVersion}</td>
+                    <td>{sessionTypeLabel(browser.sessionType)}</td>
+                    <td>
+                      <span className={`status-text status-${browser.phase.toLowerCase()}`}>{browser.phase}</span>
+                    </td>
+                    <td>{new Date(browser.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
+                    <td>{formatUptime(browser.startTime)}</td>
+                    <td className="cell-id" title={browser.sessionId}>{browser.sessionId.slice(-8)}</td>
+                    <td className="cell-actions">{renderConnect(browser, isDeleting)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         ) : (
           <div className="container-grid">
-            {sortedBrowsers.map((browser) => {
+            {visibleBrowsers.map((browser) => {
               const isDeleting = deletingIds.has(browser.browserId);
               return (
-              <div
-                key={browser.browserId}
-                className={`browser-card ${browser.phase !== 'Running' || isDeleting ? 'disabled' : ''} ${isDeleting ? 'deleting' : ''}`}
-              >
-                <div className="browser-uuid-row">
-                  <h2 className="browser-uuid" title={browser.browserId}>{browser.browserId}</h2>
+                <div
+                  key={browser.browserId}
+                  className={`browser-card status-${browser.phase.toLowerCase()} ${browser.phase !== 'Running' || isDeleting ? 'disabled' : ''} ${isDeleting ? 'deleting' : ''}`}
+                >
+                  <div className="card-head">
+                    <div className="browser-icon" data-browser={browser.browserName}>
+                      {getBrowserIcon(browser.browserName)}
+                    </div>
+                    <div className="card-head-text">
+                      <div className="browser-title" title={browser.name || browser.browserName}>
+                        {browser.name || `${browser.browserName} ${browser.browserVersion}`}
+                      </div>
+                      <div className="card-subtitle">
+                        <SessionTypeBadge
+                          type={browser.sessionType}
+                          active={sessionTypeLabel(browser.sessionType) === typeFilter}
+                          onClick={toggleTypeFilter}
+                        />
+                        <span>{browser.browserName} {browser.browserVersion}</span>
+                      </div>
+                    </div>
+                  </div>
+
                   {browser.startedManually && !isDeleting && (
                     <span className="manual-badge-wrapper">
                       <span className="manual-badge-label">manual</span>
@@ -400,67 +523,35 @@ export const Dashboard: React.FC = () => {
                       >delete</button>
                     </span>
                   )}
-                </div>
 
-                <div className="session-type-row">
-                  <SessionTypeBadge
-                    type={browser.sessionType}
-                    active={sessionTypeLabel(browser.sessionType) === typeFilter}
-                    onClick={toggleTypeFilter}
-                  />
-                </div>
-
-                {browser.name && (
-                  <div className="browser-test-name" title={browser.name}>
-                    {browser.name}
+                  <div className="browser-details">
+                    <div className="detail-row">
+                      <span className="detail-label">Status</span>
+                      <span className={`detail-value status-text status-${browser.phase.toLowerCase()}`}>{browser.phase}</span>
+                    </div>
+                    <div className="detail-row">
+                      <span className="detail-label">Started</span>
+                      <span className="detail-value">
+                        {new Date(browser.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                    <div className="detail-row">
+                      <span className="detail-label">Uptime</span>
+                      <span className="detail-value">{formatUptime(browser.startTime)}</span>
+                    </div>
                   </div>
-                )}
 
-                <div className="browser-header-row">
-                  <div className="browser-icon">{getBrowserIcon(browser.browserName)}</div>
-                  <div>
-                    <div className="browser-name">{browser.browserName}</div>
-                    <div className="browser-version">{browser.browserVersion}</div>
-                  </div>
-                </div>
+                  <div className="browser-uuid-line browser-uuid" title={browser.browserId}>{browser.browserId}</div>
 
-                <div className="browser-details">
-                  <div className="detail-row">
-                    <span className="detail-label">Session ID</span>
-                    <span className="detail-value browser-id" title={browser.sessionId}>
-                      {browser.sessionId}
-                    </span>
-                  </div>
-                  <div className="detail-row">
-                    <span className="detail-label">Status</span>
-                    <span className="detail-value">{browser.phase}</span>
-                  </div>
-                </div>
-
-                <div className="browser-meta">
-                  <div>Uptime: <time>{formatUptime(browser.startTime)}</time></div>
-                  {browser.vnc === false ? (
-                    <button
-                      className="vnc-button disabled"
-                      disabled
-                      title="VNC is not available for this browser"
-                    >
-                      CONNECT
+                  <div className="browser-meta">
+                    <button className="copy-id" onClick={() => copyId(browser.sessionId)} title={browser.sessionId}>
+                      ID {browser.sessionId.slice(-8)}
                     </button>
-                  ) : browser.phase === 'Running' && !isDeleting ? (
-                    <Link
-                      to={`/session/${browser.browserId}`}
-                      className="vnc-button"
-                      state={{ sessionStartTime: browser.startTime }}
-                    >
-                      CONNECT
-                    </Link>
-                  ) : (
-                    <button className="vnc-button disabled" disabled>CONNECT</button>
-                  )}
+                    {renderConnect(browser, isDeleting)}
+                  </div>
                 </div>
-              </div>
-            ); })}
+              );
+            })}
           </div>
         )}
       </main>

@@ -316,7 +316,7 @@ describe("Dashboard sessions", () => {
   it("shows a loading state before the first response", () => {
     mockStatus([]);
     renderDashboard();
-    expect(screen.getByText("Loading sessions...")).toBeInTheDocument();
+    expect(document.querySelectorAll(".skeleton-card").length).toBeGreaterThan(0);
   });
 
   it("signals an unauthorized status response", async () => {
@@ -497,5 +497,40 @@ describe("Dashboard vnc availability", () => {
 
     await screen.findByText("b-vnc");
     expect(screen.getByRole("link", { name: "CONNECT" })).toHaveAttribute("href", "/session/b-vnc");
+  });
+});
+
+describe("Dashboard search and views", () => {
+  const named = [
+    { ...session("b-1", "selenium"), name: "checkout smoke" },
+    { ...session("b-2", "selenium"), name: "login flow" },
+  ];
+
+  it("filters sessions by test name", async () => {
+    mockStatus([], named);
+    renderDashboard();
+    await screen.findByText("b-1");
+
+    await userEvent.type(screen.getByPlaceholderText(/Search by test name/), "checkout");
+
+    expect(cardIds()).toEqual(["b-1"]);
+  });
+
+  it("switches to the table view", async () => {
+    mockStatus([], named);
+    renderDashboard();
+    await screen.findByText("b-1");
+
+    await userEvent.click(screen.getByRole("button", { name: "Table" }));
+
+    expect(document.querySelector(".session-table")).not.toBeNull();
+    expect(screen.getByText("checkout smoke")).toBeInTheDocument();
+  });
+
+  it("shows an empty state when there are no sessions", async () => {
+    mockStatus([], []);
+    renderDashboard();
+
+    expect(await screen.findByText("No active sessions")).toBeInTheDocument();
   });
 });
