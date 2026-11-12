@@ -4,6 +4,8 @@ const SessionTypeUnknown = "unknown"
 
 const VNCAnnotationKey = "selenosis.io/session.vnc"
 
+const TestNameAnnotationKey = "selenosis.io/testname"
+
 var knownSessionTypes = map[string]struct{}{
 	"selenium":   {},
 	"playwright": {},
