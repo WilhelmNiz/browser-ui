@@ -933,3 +933,5 @@ button.session-type-badge:focus-visible {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+[data-theme='dark'] .clipboard-icon { filter: invert(1); }
