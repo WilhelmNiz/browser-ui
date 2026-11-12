@@ -534,3 +534,16 @@ describe("Dashboard search and views", () => {
     expect(await screen.findByText("No active sessions")).toBeInTheDocument();
   });
 });
+
+describe("Dashboard manual sessions in table view", () => {
+  it("marks a manually started session", async () => {
+    mockStatus([], [runningSession]);
+    renderDashboard();
+    await screen.findByText("b-1");
+
+    await userEvent.click(screen.getByRole("button", { name: "Table" }));
+
+    expect(screen.getByText("manual")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "delete" })).toBeInTheDocument();
+  });
+});

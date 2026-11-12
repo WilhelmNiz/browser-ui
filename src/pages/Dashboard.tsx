@@ -471,7 +471,10 @@ export const Dashboard: React.FC = () => {
                 const isDeleting = deletingIds.has(browser.browserId);
                 return (
                   <tr key={browser.browserId} className={isDeleting ? 'deleting' : ''}>
-                    <td className="cell-title">{browser.name || 'no name'}</td>
+                    <td className="cell-title">
+                      <span>{browser.name || 'no name'}</span>
+                      {browser.startedManually && <span className="manual-tag">manual</span>}
+                    </td>
                     <td>{browser.browserName} {browser.browserVersion}</td>
                     <td>{sessionTypeLabel(browser.sessionType)}</td>
                     <td>
@@ -480,7 +483,17 @@ export const Dashboard: React.FC = () => {
                     <td>{new Date(browser.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
                     <td>{formatUptime(browser.startTime)}</td>
                     <td className="cell-id" title={browser.sessionId}>{browser.sessionId.slice(-8)}</td>
-                    <td className="cell-actions">{renderConnect(browser, isDeleting)}</td>
+                    <td className="cell-actions">
+                      {browser.startedManually && !isDeleting && (
+                        <button
+                          className="manual-delete-link"
+                          onClick={() => deleteMutation.mutate(browser.browserId)}
+                        >
+                          delete
+                        </button>
+                      )}
+                      {renderConnect(browser, isDeleting)}
+                    </td>
                   </tr>
                 );
               })}
